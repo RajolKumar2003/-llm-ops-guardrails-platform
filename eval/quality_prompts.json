@@ -1,0 +1,7 @@
+[
+  {"id": 1, "prompt": "What is the capital of Japan?", "expected_contains": ["Tokyo"]},
+  {"id": 2, "prompt": "What is 12 multiplied by 8?", "expected_contains": ["96"]},
+  {"id": 3, "prompt": "Name the largest planet in our solar system.", "expected_contains": ["Jupiter"]},
+  {"id": 4, "prompt": "In which year did India gain independence?", "expected_contains": ["1947"]},
+  {"id": 5, "prompt": "What is the boiling point of water in Celsius?", "expected_contains": ["100"]}
+]
