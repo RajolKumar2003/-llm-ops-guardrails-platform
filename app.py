@@ -39,7 +39,7 @@ try:
 except FileNotFoundError:
     pass
 
-from core import storage, llm_client, guardrails
+from eval.run_eval import run_red_team_suite, run_pii_suite, run_quality_suite
 
 storage.init_db()
 
@@ -184,14 +184,40 @@ with tab2:
 with tab3:
     st.subheader("Self-testing eval suite")
     st.caption(
-        "Run with: `python -m eval.run_eval` from the terminal. "
-        "Red-team and PII suites are free (pure regex, no API calls); "
-        "the quality suite makes 5 real API calls."
+        "These buttons run the exact same eval logic as `python -m eval.run_eval`, "
+        "against THIS deployed instance's own database - so anyone visiting this "
+        "demo can trigger and see the system's self-testing for themselves, not "
+        "just take the README's numbers on faith."
     )
+
+    col_a, col_b = st.columns(2)
+
+    with col_a:
+        if st.button("🛡️ Run guardrail suites now (free, instant)"):
+            with st.spinner("Running red-team and PII suites..."):
+                red_acc = run_red_team_suite()
+                pii_acc = run_pii_suite()
+            st.success(
+                f"Done — Red-team: {red_acc*100:.1f}% | PII: {pii_acc*100:.1f}%"
+            )
+            st.rerun()
+
+    with col_b:
+        if st.button("🧠 Run quality suite now (uses 5 real API calls)"):
+            eval_api_key = own_key or os.environ.get("GEMINI_API_KEY")
+            if not eval_api_key:
+                st.error("No API key available. Add your own key in the sidebar first.")
+            else:
+                with st.spinner("Running 5 live questions through the model..."):
+                    quality_acc = run_quality_suite(eval_api_key)
+                st.success(f"Done — Quality regression: {quality_acc*100:.1f}%")
+                st.rerun()
+
+    st.divider()
 
     history = storage.get_eval_history(limit=500)
     if not history:
-        st.info("No eval runs recorded yet. Run `python -m eval.run_eval` and refresh this page.")
+        st.info("No eval runs recorded yet — click a button above to run one.")
     else:
         suites = sorted(set(h["suite"] for h in history))
         for suite in suites:
@@ -200,3 +226,8 @@ with tab3:
             total = len(suite_results)
             st.metric(f"{suite.replace('_', ' ').title()} accuracy",
                       f"{passed}/{total} ({passed/total*100:.1f}%)")
+
+        with st.expander("See individual eval results"):
+            for h in history[:50]:
+                status = "✅" if h["passed"] else "❌"
+                st.write(f"{status} [{h['suite']}] {h['question'][:80]}")
