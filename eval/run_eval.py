@@ -96,15 +96,29 @@ def run_pii_suite():
 
 def run_quality_suite(api_key):
     """This one DOES call the real API - keep this suite short (5
-    questions) since it costs real quota, unlike the two suites above."""
+    questions) since it costs real quota, unlike the two suites above.
+
+    Each question is wrapped in its own try/except: if Gemini's API has
+    a transient error on one question (even after llm_client's internal
+    retries are exhausted), that single question is logged as a failure
+    and the suite moves on to the next one, rather than crashing the
+    whole run and losing the other 4 results. A single upstream hiccup
+    shouldn't take down the entire eval suite."""
     prompts = json.loads((EVAL_DIR / "quality_prompts.json").read_text())
     correct = 0
 
     print("\n--- QUALITY REGRESSION SUITE (calls the live API) ---")
     for item in prompts:
-        result = llm_client.protected_generate(item["prompt"], api_key=api_key)
-        response_text = (result.get("response") or "").lower()
-        passed = any(exp.lower() in response_text for exp in item["expected_contains"])
+        try:
+            result = llm_client.protected_generate(item["prompt"], api_key=api_key)
+            response_text = (result.get("response") or "").lower()
+            passed = any(exp.lower() in response_text for exp in item["expected_contains"])
+            notes = f"response_snippet={response_text[:80]}"
+        except Exception as exc:  # noqa: BLE001 - any failure here should be
+            # logged as a failed question, not crash the whole eval run
+            passed = False
+            notes = f"error: {exc}"
+
         correct += passed
 
         status = "PASS" if passed else "FAIL"
@@ -115,7 +129,7 @@ def run_quality_suite(api_key):
             question=item["prompt"],
             passed=passed,
             score=1.0 if passed else 0.0,
-            notes=f"response_snippet={response_text[:80]}",
+            notes=notes,
         )
 
     accuracy = correct / len(prompts)

@@ -21,9 +21,9 @@ import os
 import time
 from google import genai
 from google.genai import types
-from google.genai.errors import ClientError
+from google.genai.errors import ClientError, ServerError
 
-from core import guardrails, storage
+from . import guardrails, storage
 
 MAX_RETRIES = 5
 BASE_DELAY_SECONDS = 15
@@ -50,8 +50,21 @@ def _estimate_cost(prompt_tokens: int, completion_tokens: int) -> float:
 
 
 def _call_gemini(prompt: str, api_key: str, model: str = DEFAULT_MODEL):
-    """Raw call to Gemini with retry-on-rate-limit. No guardrails here on
-    purpose - this function's only job is talking to the model."""
+    """
+    Raw call to Gemini with retry-on-transient-error. No guardrails here
+    on purpose - this function's only job is talking to the model.
+
+    Two different failure classes get retried here, for two different
+    reasons:
+      - ClientError with a 429 (RESOURCE_EXHAUSTED) means the free-tier
+        rate limit was hit - waiting and retrying is the correct fix.
+      - ServerError (5xx) means Google's own infrastructure had a
+        transient hiccup on their end, unrelated to anything we did -
+        these are usually gone on the next attempt a few seconds later.
+    Anything else (a genuinely bad request, an invalid key, etc.) is
+    NOT retried, since retrying a request that will always fail the
+    same way just wastes time and quota.
+    """
     client = _get_client(api_key)
 
     for attempt in range(1, MAX_RETRIES + 1):
@@ -66,6 +79,13 @@ def _call_gemini(prompt: str, api_key: str, model: str = DEFAULT_MODEL):
             if is_rate_limit and attempt < MAX_RETRIES:
                 wait_time = BASE_DELAY_SECONDS * attempt
                 time.sleep(wait_time)
+                continue
+            raise
+        except ServerError:
+            if attempt < MAX_RETRIES:
+                # Shorter backoff than the rate-limit case, since this
+                # is usually a brief upstream blip, not a quota issue.
+                time.sleep(5 * attempt)
                 continue
             raise
 
