@@ -1,3 +1,90 @@
+# LLM Ops & Guardrails Platform
+
+**Live demo:** https://ht4waxpgal26yutguytrfr.streamlit.app
+
+A monitoring and safety layer that sits around any LLM call — the part
+of an AI system most student projects skip. This project doesn't build
+a new AI feature; it builds the **operations layer** that makes an
+existing AI feature trustworthy enough to actually run in production:
+input guardrails, output PII redaction, cost/latency telemetry, and a
+self-testing evaluation suite.
+
+It's designed as a companion to a separate project (an autonomous
+multi-agent RAG system) — that project is the "product feature", this
+one is the "ops team" that would watch over it once it's live.
+
+**Companion project:** [Autonomous Multi-Agent Enterprise Insight System](https://github.com/RajolKumar2003/multi-agent-insight-system)
+([live demo](https://multi-agent-insight-system-cc9lmzbytnwanog4kt4rxi.streamlit.app))
+
+## Why this exists
+
+Most LLM demos stop at "it answers questions." This project answers a
+different question: **how do you know the system is behaving safely and
+consistently over time, without watching every response by hand?**
+
+That's the job of:
+- **Input guardrails** — catching prompt-injection attempts before they
+  ever reach the model
+- **Output guardrails** — catching and redacting PII the model might
+  echo back, before a user ever sees it
+- **Telemetry** — logging cost, latency, and token usage on every call
+- **A self-testing eval suite** — a red-team prompt set, a PII test set,
+  and a quality-regression set, run on demand, with results tracked over
+  time rather than checked once and forgotten
+
+## Architecture
+
+                ┌─────────────────────┐
+User prompt ───▶│ Input Guardrail │── blocked? ──▶ logged, never sent
+│ (prompt-injection │
+│ pattern matching) │
+└──────────┬──────────┘
+│ clean
+▼
+┌─────────────────────┐
+│ Gemini API call │ (retry + backoff on both
+│ (core/llm_client) │ rate limits AND transient
+│ │ upstream server errors)
+└──────────┬──────────┘
+│ raw response
+▼
+┌─────────────────────┐
+│ Output Guardrail │── PII found? ──▶ redacted
+│ (PII detection + │
+│ schema validation) │
+└──────────┬──────────┘
+│
+▼
+┌─────────────────────┐
+│ SQLite storage │── every call logged, even
+│ (core/storage.py) │ blocked ones
+└──────────┬──────────┘
+│
+▼
+┌─────────────────────┐
+│ Streamlit dashboard │ Live Console / Ops Dashboard
+│ (app.py) │ / Eval Results
+└─────────────────────┘
+
+
+## Project structure
+
+llm-ops-guardrails-platform/
+├── core/
+│ ├── llm_client.py # the only file that talks to Gemini directly
+│ ├── guardrails.py # input injection detection + output PII redaction
+│ └── storage.py # SQLite logging and aggregation
+├── eval/
+│ ├── red_team_prompts.json # 15 prompts testing injection detection (offline)
+│ ├── pii_test_cases.json # 8 cases testing PII detection (offline)
+│ ├── quality_prompts.json # 5 prompts testing answer correctness (calls the API)
+│ └── run_eval.py # runs all three suites, prints + stores results
+├── data/ # SQLite database lives here (gitignored)
+├── app.py # Streamlit dashboard (3 tabs)
+├── requirements.txt
+├── .env.example
+└── README.md
+
 
 ## Why the eval suite is split into "free" and "costs quota" parts
 
