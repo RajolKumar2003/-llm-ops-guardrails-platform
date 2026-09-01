@@ -34,56 +34,31 @@ That's the job of:
 
 ## Architecture
 
-                ┌─────────────────────┐
-User prompt ───▶│ Input Guardrail │── blocked? ──▶ logged, never sent
-│ (prompt-injection │
-│ pattern matching) │
-└──────────┬──────────┘
-│ clean
-▼
-┌─────────────────────┐
-│ Gemini API call │ (retry + backoff on both
-│ (core/llm_client) │ rate limits AND transient
-│ │ upstream server errors)
-└──────────┬──────────┘
-│ raw response
-▼
-┌─────────────────────┐
-│ Output Guardrail │── PII found? ──▶ redacted
-│ (PII detection + │
-│ schema validation) │
-└──────────┬──────────┘
-│
-▼
-┌─────────────────────┐
-│ SQLite storage │── every call logged, even
-│ (core/storage.py) │ blocked ones
-└──────────┬──────────┘
-│
-▼
-┌─────────────────────┐
-│ Streamlit dashboard │ Live Console / Ops Dashboard
-│ (app.py) │ / Eval Results
-└─────────────────────┘
+```mermaid
+flowchart TD
+    A[User prompt] --> B{Input Guardrail<br/>prompt-injection<br/>pattern matching}
+    B -- blocked --> C[Logged, never sent to model]
+    B -- clean --> D[Gemini API call<br/>core/llm_client.py<br/>retry + backoff on<br/>rate limits AND server errors]
+    D --> E{Output Guardrail<br/>PII detection +<br/>schema validation}
+    E -- PII found --> F[Redacted before<br/>reaching the user]
+    E -- clean --> G[SQLite storage<br/>core/storage.py<br/>every call logged,<br/>even blocked ones]
+    F --> G
+    G --> H[Streamlit dashboard<br/>Live Console / Ops Dashboard<br/>/ Eval Results]
+```
 
 
 ## Project structure
 
-llm-ops-guardrails-platform/
-├── core/
-│ ├── llm_client.py # the only file that talks to Gemini directly
-│ ├── guardrails.py # input injection detection + output PII redaction
-│ └── storage.py # SQLite logging and aggregation
-├── eval/
-│ ├── red_team_prompts.json # 15 prompts testing injection detection (offline)
-│ ├── pii_test_cases.json # 8 cases testing PII detection (offline)
-│ ├── quality_prompts.json # 5 prompts testing answer correctness (calls the API)
-│ └── run_eval.py # runs all three suites, prints + stores results
-├── data/ # SQLite database lives here (gitignored)
-├── app.py # Streamlit dashboard (3 tabs)
-├── requirements.txt
-├── .env.example
-└── README.md
+- `core/llm_client.py` — the only file that talks to Gemini directly
+- `core/guardrails.py` — input injection detection + output PII redaction
+- `core/storage.py` — SQLite logging and aggregation
+- `eval/red_team_prompts.json` — 15 prompts testing injection detection (offline)
+- `eval/pii_test_cases.json` — 8 cases testing PII detection (offline)
+- `eval/quality_prompts.json` — 5 prompts testing answer correctness (calls the API)
+- `eval/run_eval.py` — runs all three suites, prints + stores results
+- `data/` — SQLite database lives here (gitignored)
+- `app.py` — Streamlit dashboard (3 tabs)
+- `requirements.txt`, `.env.example`, `README.md`
 
 
 ## Why the eval suite is split into "free" and "costs quota" parts
